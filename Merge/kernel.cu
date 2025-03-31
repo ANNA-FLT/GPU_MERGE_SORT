@@ -8,45 +8,8 @@
 
 #define MAX_THREADS_PER_BLOCK 1024
 
-//Device function for recursive Merge
-__device__ void Merge(int* arr, int* temp, int left, int middle, int right) 
-{
-    int i = left;
-    int j = middle;
-    int k = left;
-
-    while (i < middle && j < right) 
-    {
-        if (arr[i] <= arr[j])
-            temp[k++] = arr[i++];
-        else
-            temp[k++] = arr[j++];
-    }
-
-    while (i < middle)
-        temp[k++] = arr[i++];
-    while (j < right)
-        temp[k++] = arr[j++];
-
-    for (int x = left; x < right; x++)
-        arr[x] = temp[x];
-}
-
-//GPU Kernel for Merge Sort
-__global__ void MergeSortGPU(int* arr, int* temp, int n, int width) 
-{
-    int tid = threadIdx.x + blockDim.x * blockIdx.x;
-    int left = tid * width;
-    int middle = left + width / 2;
-    int right = left + width;
-
-    if (left < n && middle < n) 
-    {
-        Merge(arr, temp, left, middle, right);
-    }
-}
-
-//CPU Merge Recursive Call function
+// Method 1 串行
+// CPU Merge Recursive Call function
 void merge(int* arr, int* temp, int left, int mid, int right) 
 {
     int i = left;
@@ -71,7 +34,7 @@ void merge(int* arr, int* temp, int left, int mid, int right)
         arr[idx] = temp[idx];
 }
 
-//CPU Implementation of Merge Sort
+// CPU Implementation of Merge Sort
 void mergeSortCPU(int* arr, int* temp, int left, int right) 
 {
     if (left >= right)
@@ -85,6 +48,46 @@ void mergeSortCPU(int* arr, int* temp, int left, int right)
     merge(arr, temp, left, mid, right);
 }
 
+// Method 2 并行
+// Device function for recursive Merge
+__device__ void Merge(int* arr, int* temp, int left, int middle, int right) 
+{
+    int i = left;
+    int j = middle;
+    int k = left;
+
+    while (i < middle && j < right) 
+    {
+        if (arr[i] <= arr[j])
+            temp[k++] = arr[i++];
+        else
+            temp[k++] = arr[j++];
+    }
+
+    while (i < middle)
+        temp[k++] = arr[i++];
+    while (j < right)
+        temp[k++] = arr[j++];
+
+    for (int x = left; x < right; x++)
+        arr[x] = temp[x];
+}
+
+// GPU Kernel for Merge Sort
+__global__ void MergeSortGPU(int* arr, int* temp, int n, int width) 
+{
+    int tid = threadIdx.x + blockDim.x * blockIdx.x;
+    int left = tid * width;
+    int middle = left + width / 2;
+    int right = left + width;
+
+    if (left < n && middle < n) 
+    {
+        Merge(arr, temp, left, middle, right);
+    }
+}
+
+// Method 3 共享内存并行
 // 共享内存归并排序 - 每个块内进行插入排序
 __global__ void sharedMemoryMergeSort(int* arr, int n) 
 {
@@ -120,7 +123,8 @@ __global__ void sharedMemoryMergeSort(int* arr, int n)
     }
 }
 
-//Function to print array
+// 功能函数
+// Function to print array
 void printArray(int* arr, int size) 
 {
     for (int i = 0; i < size; ++i)
@@ -128,7 +132,7 @@ void printArray(int* arr, int size)
     std::cout << std::endl;
 }
 
-//Automated function to check if array is sorted
+// Automated function to check if array is sorted
 bool isSorted(int* arr, int size) 
 {
     for (int i = 1; i < size; ++i) 
@@ -139,25 +143,27 @@ bool isSorted(int* arr, int size)
     return true;
 }
 
-//Function to check if given number is a power of 2
+// Function to check if given number is a power of 2
 bool isPowerOfTwo(int num) 
 {
     return num > 0 && (num & (num - 1)) == 0;
 }
 
 
-//MAIN PROGRAM
+// MAIN PROGRAM
 int main()
 {   
     std::cout << "-----------------------------------------------" << std::endl;
     std::cout << "MERGE SORT IMPLEMENTATION" << std::endl;
     std::cout << "A Performance Comparison of These 4 Sorts in CPU vs GPU vs sharedMemory vs ？？？ " << std::endl;
     std::cout << "-----------------------------------------------" << std::endl;
+    
 
+    // 输入大小
     int size;
     std::cout << "\n\nEnter the size of the array. Must be a power of 2:\n ";
     std::cin>>size;
-
+    // 判断是否为2的幂
     while (!isPowerOfTwo(size))
     {
         if (!isPowerOfTwo(size))
@@ -169,6 +175,8 @@ int main()
             break;
     }
     
+
+    // 初始化数组
     //Create CPU based Arrays
     int* arr = new int[size];
     int* arr2 = new int[size];
@@ -187,6 +195,8 @@ int main()
     for (int i = 0; i < size; ++i) 
     {
         arr[i] = rand() % 100;
+        arr2[i] = arr[i];
+        //arr3[i]
         carr[i] = arr[i];
     }
 
@@ -201,46 +211,73 @@ int main()
         printf("\nToo Big to print. Check Variable. Automated isSorted Checker will be implemented\n");
     }
 
+
+    // 排序
+
+
+    // CPU
+    // 初始化时间变量
+    // Initialize CPU clock counters
+    clock_t startCPU, endCPU;
+    // Time the CPU and call CPU Merge Sort
+    startCPU = clock();
+    mergeSortCPU(carr, temp, 0, size - 1);
+    endCPU = clock();
+    // Calculate Elapsed CPU time
+    double millisecondsCPU = static_cast<double>(endCPU - startCPU) / (CLOCKS_PER_SEC / 1000.0);
+    
+    
+    // GPU
+    // 分配GPU内存
     // Allocate memory on GPU
     cudaMalloc((void**)&gpuArrmerge, size * sizeof(int));
     cudaMalloc((void**)&gpuTemp, size * sizeof(int));
-    cudaMalloc((void**)&gpuArrmerge2, size * sizeof(int));
-    //cudaMalloc((void**)&gpuArrmerge3, size * sizeof(int)); ？？？
-
     // Copy the input array to GPU memory
-    cudaMemcpy(gpuArrmerge, arr, size * sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(gpuArrmerge2, arr, size * sizeof(int), cudaMemcpyHostToDevice);
-    //cudaMemcpy(gpuArrmerge3, arr, size * sizeof(int), cudaMemcpyHostToDevice);
-
+    cudaMemcpy(gpuArrmerge, arr, size * sizeof(int), cudaMemcpyHostToDevice); 
+    
+    // 初始化时间变量
     // Perform GPU merge sort and measure time
     cudaEvent_t startGPU, stopGPU;
     cudaEventCreate(&startGPU);
     cudaEventCreate(&stopGPU);
     float millisecondsGPU = 0;
     
+    // Set number of threads and blocks for kernel calls
+    int threadsPerBlock = MAX_THREADS_PER_BLOCK;
+    int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
+     //Call GPU Merge Kernel and time the run
+    cudaEventRecord(startGPU);
+    for (int wid = 1; wid < size; wid *= 2)
+    {
+        MergeSortGPU << <threadsPerBlock, blocksPerGrid >> > (gpuArrmerge, gpuTemp, size, wid * 2);
+    }
+    cudaEventRecord(stopGPU);
+    
+    // 传送结果
+    //Transfer sorted array back to CPU
+    cudaMemcpy(arr, gpuArrmerge, size * sizeof(int), cudaMemcpyDeviceToHost);
+    //Calculate Elapsed GPU time
+    cudaEventSynchronize(stopGPU);
+    cudaEventElapsedTime(&millisecondsGPU, startGPU, stopGPU);
+    //End
+    cudaFree(gpuArrmerge);
+    cudaFree(gpuTemp);
+
+
+    // 共享内存
+    // 分配GPU内存
+    // Allocate memory on GPU
+    cudaMalloc((void**)&gpuArrmerge2, size * sizeof(int));
+    // Copy the input array to GPU memory
+    cudaMemcpy(gpuArrmerge2, arr, size * sizeof(int), cudaMemcpyHostToDevice);   
+    
+    // 初始化时间变量
     // Perform sharedMemory merge sort and measure time
     cudaEvent_t startGPU2, stopGPU2;
     cudaEventCreate(&startGPU2);
     cudaEventCreate(&stopGPU2);
     float millisecondsGPU2 = 0;
 
-    // // Perform sharedMemory merge sort and measure time？？？
-    // cudaEvent_t startGPU3, stopGPU3;
-    // cudaEventCreate(&startGPU3);
-    // cudaEventCreate(&stopGPU3);
-    // float millisecondsGPU3 = 0;
-
-    //Initialize CPU clock counters
-    clock_t startCPU, endCPU;
-
-
-
-
-
-
-
-
-     //sharedMemory
     // 确定线程块大小
     int threadsPerBlock2 = 256; // 每个线程块的线程数
     int blocksPerGrid2 = (size + threadsPerBlock2 - 1) / threadsPerBlock2; // 计算线程块数量
@@ -251,51 +288,20 @@ int main()
     sharedMemoryMergeSort << < blocksPerGrid2, threadsPerBlock2, sharedMemSize >> > (gpuArrmerge2, size);
     cudaEventRecord(stopGPU2);
 
+    // 传送结果
     //Transfer sorted array back to CPU
     cudaMemcpy(arr2, gpuArrmerge2, size * sizeof(int), cudaMemcpyDeviceToHost);
-
     //Calculate Elapsed GPU time
     cudaEventSynchronize(stopGPU2);
     cudaEventElapsedTime(&millisecondsGPU2, startGPU2, stopGPU2);
+    //End
+    cudaFree(gpuArrmerge2);
+        
 
 
-    //Set number of threads and blocks for kernel calls
-    int threadsPerBlock = MAX_THREADS_PER_BLOCK;
-    int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
-
-     //Call GPU Merge Kernel and time the run
-    cudaEventRecord(startGPU);
-    for (int wid = 1; wid < size; wid *= 2)
-    {
-        MergeSortGPU << <threadsPerBlock, blocksPerGrid >> > (gpuArrmerge, gpuTemp, size, wid * 2);
-    }
-    cudaEventRecord(stopGPU);
-
-    //Transfer sorted array back to CPU
-    cudaMemcpy(arr, gpuArrmerge, size * sizeof(int), cudaMemcpyDeviceToHost);
-
-    //Calculate Elapsed GPU time
-    cudaEventSynchronize(stopGPU);
-    cudaEventElapsedTime(&millisecondsGPU, startGPU, stopGPU);
-
-
-    //Time the CPU and call CPU Merge Sort
-    startCPU = clock();
-    mergeSortCPU(carr, temp, 0, size - 1);
-    endCPU = clock();
-    //Calculate Elapsed CPU time
-    double millisecondsCPU = static_cast<double>(endCPU - startCPU) / (CLOCKS_PER_SEC / 1000.0);
-
-   
-
-
-
-
-
-
-
-    //Display sorted CPU array
-    std::cout << "\nSorted CPU array: ";
+    // 输出结果
+    // Display sorted CPU array
+    std::cout << "\n\nSorted CPU array: ";
     if (size <= 100) 
     {
         printArray(carr, size);
@@ -325,10 +331,8 @@ int main()
     }
     
     //Run the array with the automated isSorted checker
-    
-   
     if (isSorted(carr, size))
-        std::cout << "SORT CHECKER RUNNING - SUCCESFULLY SORTED CPU ARRAY" << std::endl;
+        std::cout << "\n\nSORT CHECKER RUNNING - SUCCESFULLY SORTED CPU ARRAY" << std::endl;
     else
         std::cout << "SORT CHECKER RUNNING - !!! FAIL !!!" << std::endl;
 
@@ -353,11 +357,6 @@ int main()
     delete[] arr2;
     delete[] temp;
 
-    //End
-    cudaFree(gpuArrmerge);
-    cudaFree(gpuArrmerge2);
-    cudaFree(gpuTemp);
-
-    std::cout << "\n------------------------------------------------------------------------------------\n||||| END. YOU MAY RUN THIS AGAIN |||||\n------------------------------------------------------------------------------------";
+    std::cout << "\n------------------------------------------------------------------------------------\n||||| END. YOU MAY RUN THIS AGAIN |||||\n------------------------------------------------------------------------------------\n";
     return 0;
 }
