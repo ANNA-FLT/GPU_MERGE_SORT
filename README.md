@@ -6,6 +6,9 @@
 - 进入Merge目录，执行下列语句：
   - nvcc -o merge_sort kernel.cu
   - ./merge_sort
+ 
+###参考
+https://github.com/rbga/CUDA-Merge-and-Bitonic-Sort.git
 
 
 　
