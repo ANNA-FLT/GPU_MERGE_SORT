@@ -99,8 +99,11 @@ __global__ void sharedMemoryMergeSort(int* arr, int* temp, int n)
     if (block_start + local_tid < n) 
     {
         sharedArr[local_tid] = arr[block_start + local_tid];
+    }else {
+        sharedArr[local_tid] = INT_MAX; // 填充无效值
     }
     __syncthreads();
+    
     // 2. 共享内存内部执行归并排序
     for (int width = 1; width < blockDim.x; width *= 2) {
         int left = local_tid * width * 2;
@@ -112,18 +115,10 @@ __global__ void sharedMemoryMergeSort(int* arr, int* temp, int n)
         }
         __syncthreads();
     }
-
+    
     // 3. 写回全局内存
-    // 计算 `validSize`（非零部分）
-    int validSize = 0;
-    for (int i = 0; i < blockDim.x; i++) {
-        if (sharedArr[i] > 0) {
-            validSize++;
-        }
-    }
-    // 写回全局内存
     if (block_start + local_tid < n) {
-        arr[block_start + local_tid] = sharedArr[local_tid + (blockDim.x - validSize)];
+        arr[block_start + local_tid] = sharedArr[local_tid];
     }
 }
 
