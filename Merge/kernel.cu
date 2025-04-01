@@ -1,4 +1,4 @@
-﻿#include "cuda_runtime.h"
+﻿#include "cuda_runtime.h" 
 #include "device_launch_parameters.h"
 #include <cuda.h>
 #include <iostream>
@@ -53,7 +53,7 @@ void mergeSortCPU(int* arr, int* temp, int left, int right)
 __device__ void Merge(int* arr, int* temp, int left, int middle, int right) 
 {
     int i = left;
-    int j = middle;
+    int j = middle; 
     int k = left;
 
     while (i < middle && j < right) 
@@ -88,8 +88,8 @@ __global__ void MergeSortGPU(int* arr, int* temp, int n, int width)
 }
 
 // Method 3 共享内存并行
-// 共享内存归并排序 - 每个块内进行插入排序
-__global__ void sharedMemoryMergeSort(int* arr, int n) 
+// 共享内存归并排序 - 每个块内进行归并排序
+__global__ void sharedMemoryMergeSort(int* arr, int* temp, int n) 
 {
     extern __shared__ int sharedArr[]; // 共享内存声明
     int local_tid = threadIdx.x; // 计算块内索引
@@ -100,28 +100,34 @@ __global__ void sharedMemoryMergeSort(int* arr, int n)
     {
         sharedArr[local_tid] = arr[block_start + local_tid];
     }
-    __syncthreads(); // 确保所有数据加载完成
+    __syncthreads();
+    // 2. 共享内存内部执行归并排序
+    for (int width = 1; width < blockDim.x; width *= 2) {
+        int left = local_tid * width * 2;
+        int middle = left + width;
+        int right = min(left + width * 2, blockDim.x);
 
-    // 2. 共享内存内部执行插入排序
-    for (int i = 1; i < blockDim.x && block_start + i < n; i++) 
-    {
-        int key = sharedArr[i];
-        int j = i - 1;
-        while (j >= 0 && sharedArr[j] > key) 
-        {
-            sharedArr[j + 1] = sharedArr[j];
-            j--;
+        if (middle < blockDim.x) {
+            Merge(sharedArr, temp, left, middle, right);
         }
-        sharedArr[j + 1] = key;
+        __syncthreads();
     }
-    __syncthreads(); // 确保排序完成
 
     // 3. 写回全局内存
-    if (block_start + local_tid < n) 
-    {
-        arr[block_start + local_tid] = sharedArr[local_tid];
+    // 计算 `validSize`（非零部分）
+    int validSize = 0;
+    for (int i = 0; i < blockDim.x; i++) {
+        if (sharedArr[i] > 0) {
+            validSize++;
+        }
+    }
+    // 写回全局内存
+    if (block_start + local_tid < n) {
+        arr[block_start + local_tid] = sharedArr[local_tid + (blockDim.x - validSize)];
     }
 }
+
+
 
 // 功能函数
 // Function to print array
@@ -184,17 +190,19 @@ int main()
     int* carr = new int[size];
     int* temp = new int[size];
 
+
     //Create GPU based arrays
     int* gpuArrmerge;
     int* gpuArrmerge2;
     //int* gpuArrmerge3; ？？？
     int* gpuTemp;
+    int* gpuTemp2;
 
     // Initialize the array with random values
     srand(static_cast<unsigned int>(time(nullptr)));
     for (int i = 0; i < size; ++i) 
     {
-        arr[i] = rand() % 100;
+        arr[i] = rand() % 256 + 1;
         arr2[i] = arr[i];
         //arr3[i]
         carr[i] = arr[i];
@@ -202,7 +210,7 @@ int main()
 
     //Print unsorted array 
     std::cout << "\n\nUnsorted array: ";
-    if (size <= 100) 
+    if (size <= 256) 
     {
         printArray(arr, size);
     }
@@ -268,24 +276,27 @@ int main()
     // 分配GPU内存
     // Allocate memory on GPU
     cudaMalloc((void**)&gpuArrmerge2, size * sizeof(int));
+    cudaMalloc((void**)&gpuTemp2, size * sizeof(int));
     // Copy the input array to GPU memory
-    cudaMemcpy(gpuArrmerge2, arr, size * sizeof(int), cudaMemcpyHostToDevice);   
+    cudaMemcpy(gpuArrmerge2, arr2, size * sizeof(int), cudaMemcpyHostToDevice);   
     
     // 初始化时间变量
     // Perform sharedMemory merge sort and measure time
-    cudaEvent_t startGPU2, stopGPU2;
+    cudaEvent_t startGPU2, stopGPU2; 
     cudaEventCreate(&startGPU2);
     cudaEventCreate(&stopGPU2);
-    float millisecondsGPU2 = 0;
+    float millisecondsGPU2 = 0;  
 
     // 确定线程块大小
     int threadsPerBlock2 = 256; // 每个线程块的线程数
-    int blocksPerGrid2 = (size + threadsPerBlock2 - 1) / threadsPerBlock2; // 计算线程块数量
-     // 设置共享内存大小
-    int sharedMemSize = sizeof(int) * threadsPerBlock2; 
+    int blocksPerGrid2 = (size + threadsPerBlock2 - 1) / threadsPerBlock2; // 计算线程块数量        
+    // 计算共享内存的大小：每个线程块需要至少存储一个元素
+    int sharedMemSize = threadsPerBlock2 * sizeof(int);
+    // 记录开始时间
     cudaEventRecord(startGPU2);
-    // 调用 GPU 共享内存归并排序
-    sharedMemoryMergeSort << < blocksPerGrid2, threadsPerBlock2, sharedMemSize >> > (gpuArrmerge2, size);
+    // 启动归并排序内核
+    sharedMemoryMergeSort << < blocksPerGrid2, threadsPerBlock2, sharedMemSize >> > (gpuArrmerge2, gpuTemp2, size);
+    // 记录结束时间
     cudaEventRecord(stopGPU2);
 
     // 传送结果
@@ -296,13 +307,14 @@ int main()
     cudaEventElapsedTime(&millisecondsGPU2, startGPU2, stopGPU2);
     //End
     cudaFree(gpuArrmerge2);
+    cudaFree(gpuTemp2);
         
 
 
     // 输出结果
     // Display sorted CPU array
     std::cout << "\n\nSorted CPU array: ";
-    if (size <= 100) 
+    if (size <= 256) 
     {
         printArray(carr, size);
     }
@@ -312,7 +324,7 @@ int main()
 
     // Display sorted GPU array
     std::cout << "\n\nSorted GPU array: ";
-    if (size <= 100) 
+    if (size <= 256) 
     {
         printArray(arr, size);
     }
@@ -322,7 +334,7 @@ int main()
 
     // Display sorted sharedMemory array
     std::cout << "\n\nSorted sharedMemory array: ";
-    if (size <= 100) 
+    if (size <= 256) 
     {
         printArray(arr2, size);
     }
